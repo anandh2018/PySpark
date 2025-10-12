@@ -1,8 +1,3 @@
-"""
-High-Performance Oracle to PySpark Data Extraction
-Optimized for 200M records with parallel processing
-"""
-
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
 import json
@@ -212,9 +207,9 @@ def main():
     """Main execution function"""
     
     # Configuration
-    CONFIG_BUCKET = "pypl-bkt-prd-row-std-lands"
+    CONFIG_BUCKET = "liftAndShift"
     CONFIG_PATH = "pysparkJobConfig/oracle_extraction_config.yml"
-    OUTPUT_PATH = "gs://pypl-bkt-prd-row-std-lands/oracle_data/"
+    OUTPUT_PATH = "gs://liftAndShift/oracle_data/"
     OUTPUT_FORMAT = "parquet"
     
     try:
