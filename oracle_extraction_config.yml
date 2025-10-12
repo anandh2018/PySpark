@@ -1,0 +1,58 @@
+# Oracle Connection Configuration
+oracle:
+  host: "your-oracle-m6-host.example.com"
+  port: 1521
+  service_name: "ORCL"  # or SID
+  username: "your_username"
+  password: "your_password"
+
+# Spark Configuration
+spark:
+  app_name: "OracleFullLoadExtraction"
+  executor_memory: "16g"          # Increase for better performance
+  driver_memory: "8g"
+  executor_cores: 4
+  num_executors: 20               # Adjust based on cluster size
+  memory_fraction: 0.8
+  storage_fraction: 0.3
+  shuffle_partitions: 400
+  default_parallelism: 400
+  network_timeout: "800s"
+  heartbeat_interval: "60s"
+  log_level: "WARN"
+
+# Data Extraction Configuration
+extraction:
+  # SQL Query with joins and filters
+  query: |
+    select * from  sndrsim.sndrsim_radd
+    limit 100
+  
+  # Partitioning Configuration (CRITICAL for performance with 200M records)
+  # Use a numeric column with good distribution (e.g., ID, timestamp as number)
+  partition_column: "id"          # Must be numeric column from query
+  num_partitions: 100             # Higher = more parallelism (100-200 recommended)
+  
+  # Optional: Specify bounds manually for better control
+  # If not specified, will be calculated automatically
+  lower_bound: 1
+  upper_bound: 200000000
+  
+  # JDBC Fetch Settings
+  fetch_size: 10000               # Records fetched per round trip
+  batch_size: 10000               # For write operations
+  
+  # Output Settings
+  output_partitions: 200          # Number of output files
+  compression: "snappy"           # snappy, gzip, lz4, zstd
+  write_mode: "overwrite"         # overwrite, append, ignore
+  
+  # Optional: Column transformations
+  transformations:
+    - type: "rename_column"
+      old_name: "customer_name"
+      new_name: "cust_name"
+    - type: "cast"
+      column: "order_date"
+      data_type: "timestamp"
+
