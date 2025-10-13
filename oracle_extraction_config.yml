@@ -1,58 +1,295 @@
-# Oracle Connection Configuration
+# ================================================================
+# Oracle Multi-Table Extraction Configuration
+# Production-Ready Template
+# ================================================================
+
+# Oracle Database Connection
 oracle:
   host: "your-oracle-m6-host.example.com"
   port: 1521
-  service_name: "ORCL"  # or SID
+  service_name: "ORCL"              # Use service_name or SID
   username: "your_username"
   password: "your_password"
 
-# Spark Configuration
+# Global Spark Configuration
 spark:
-  app_name: "OracleFullLoadExtraction"
-  executor_memory: "16g"          # Increase for better performance
-  driver_memory: "8g"
-  executor_cores: 4
-  num_executors: 20               # Adjust based on cluster size
-  memory_fraction: 0.8
-  storage_fraction: 0.3
-  shuffle_partitions: 400
-  default_parallelism: 400
-  network_timeout: "800s"
-  heartbeat_interval: "60s"
-  log_level: "WARN"
+  app_name: "OracleMultiTableExtraction"
+  
+  # Resource Allocation
+  executor_memory: "16g"            # Memory per executor
+  driver_memory: "8g"               # Driver memory
+  executor_cores: 4                 # Cores per executor
+  num_executors: 20                 # Number of executors
+  
+  # Memory Management
+  memory_fraction: 0.8              # Fraction of heap for execution/storage
+  storage_fraction: 0.3             # Fraction of memory for caching
+  
+  # Parallelism
+  shuffle_partitions: 400           # Partitions for shuffle operations
+  default_parallelism: 400          # Default parallelism level
+  
+  # Timeouts
+  network_timeout: "800s"           # Network timeout for large transfers
+  heartbeat_interval: "60s"         # Executor heartbeat interval
+  
+  # Logging
+  log_level: "WARN"                 # DEBUG, INFO, WARN, ERROR
 
-# Data Extraction Configuration
-extraction:
-  # SQL Query with joins and filters
-  query: |
-    select * from  sndrsim.sndrsim_radd
-    limit 100
-  
-  # Partitioning Configuration (CRITICAL for performance with 200M records)
-  # Use a numeric column with good distribution (e.g., ID, timestamp as number)
-  partition_column: "id"          # Must be numeric column from query
-  num_partitions: 100             # Higher = more parallelism (100-200 recommended)
-  
-  # Optional: Specify bounds manually for better control
-  # If not specified, will be calculated automatically
-  lower_bound: 1
-  upper_bound: 200000000
-  
-  # JDBC Fetch Settings
-  fetch_size: 10000               # Records fetched per round trip
-  batch_size: 10000               # For write operations
-  
-  # Output Settings
-  output_partitions: 200          # Number of output files
-  compression: "snappy"           # snappy, gzip, lz4, zstd
-  write_mode: "overwrite"         # overwrite, append, ignore
-  
-  # Optional: Column transformations
-  transformations:
-    - type: "rename_column"
-      old_name: "customer_name"
-      new_name: "cust_name"
-    - type: "cast"
-      column: "order_date"
-      data_type: "timestamp"
+# ================================================================
+# Tables Configuration
+# Define all tables to extract with individual settings
+# ================================================================
 
+tables:
+#Table 1: 
+  orders:
+    # SQL Query - supports joins, filters, aggregations
+    query: |
+      SELECT 
+        o.order_id,
+        o.customer_id,
+        o.customer_name,
+        o.order_date,
+        o.order_amount,
+        o.status,
+        o.shipping_address,
+        o.billing_address,
+        oi.item_id,
+        oi.product_id,
+        oi.product_name,
+        oi.quantity,
+        oi.unit_price,
+        oi.discount,
+        p.category_id,
+        p.category_name,
+        p.brand
+      FROM orders o
+      INNER JOIN order_items oi ON o.order_id = oi.order_id
+      INNER JOIN products p ON oi.product_id = p.product_id
+      WHERE o.order_date >= TO_DATE('2023-01-01', 'YYYY-MM-DD')
+        AND o.status IN ('COMPLETED', 'SHIPPED', 'PROCESSING')
+        AND oi.quantity > 0
+        AND o.is_deleted = 0
+    
+    # Parallel Execution Settings
+    parallel_execution: true          # Enable parallel extraction
+    partition_column: "order_id"      # Numeric column for partitioning
+    num_partitions: 150               # Number of parallel tasks
+    lower_bound: 1                    # Min value (optional - auto-detect if omitted)
+    upper_bound: 200000000            # Max value (optional - auto-detect if omitted)
+    
+    # JDBC Performance Settings
+    fetch_size: 10000                 # Records per fetch
+    batch_size: 10000                 # Batch size for operations
+    
+    # Output Configuration
+    output_format: "parquet"          # parquet, orc, csv, json
+    output_partitions: 200            # Number of output files
+    compression: "snappy"             # snappy, gzip, lz4, zstd, none
+    write_mode: "overwrite"           # overwrite, append, ignore, error
+    
+    # Performance Optimization
+    cache_dataframe: false            # Cache if multiple operations needed
+# Table 2
+  customers:
+    query: |
+      SELECT 
+        customer_id,
+        first_name,
+        last_name,
+        email,
+        phone,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        country,
+        postal_code,
+        registration_date,
+        customer_segment,
+        loyalty_points,
+        lifetime_value,
+        is_active
+      FROM customers
+      WHERE is_active = 1
+        AND registration_date >= TO_DATE('2020-01-01', 'YYYY-MM-DD')
+    
+    parallel_execution: true
+    partition_column: "customer_id"
+    num_partitions: 100
+    # lower_bound and upper_bound will auto-detect
+    
+    fetch_size: 10000
+    batch_size: 10000
+    
+    output_format: "parquet"
+    output_partitions: 120
+    compression: "snappy"
+    write_mode: "overwrite"
+# Table 3 
+  transactions:
+    query: |
+      SELECT 
+        transaction_id,
+        account_id,
+        customer_id,
+        transaction_date,
+        transaction_timestamp,
+        transaction_type,
+        amount,
+        currency,
+        status,
+        payment_method,
+        merchant_id,
+        merchant_name,
+        merchant_category,
+        country_code,
+        card_last_four,
+        authorization_code
+      FROM transactions
+      WHERE transaction_date >= TO_DATE('2024-01-01', 'YYYY-MM-DD')
+        AND status = 'COMPLETED'
+    
+    parallel_execution: true
+    partition_column: "transaction_id"
+    num_partitions: 200               # High parallelism for large dataset
+    
+    fetch_size: 12000
+    batch_size: 12000
+    
+    output_format: "parquet"
+    output_partitions: 300
+    compression: "snappy"
+    write_mode: "overwrite"
+    
+#Table 4: 
+  products:
+    query: |
+      SELECT 
+        product_id,
+        product_name,
+        product_code,
+        description,
+        category_id,
+        category_name,
+        brand,
+        unit_price,
+        cost_price,
+        stock_quantity,
+        reorder_level,
+        supplier_id,
+        supplier_name,
+        is_active,
+        created_date,
+        last_updated
+      FROM products
+      WHERE is_active = 1
+    
+    parallel_execution: true
+    partition_column: "product_id"
+    num_partitions: 50
+    
+    fetch_size: 8000
+    batch_size: 8000
+    
+    output_format: "parquet"
+    output_partitions: 60
+    compression: "snappy"
+    write_mode: "overwrite"
+    
+
+  product_categories:
+    query: |
+      SELECT 
+        category_id,
+        category_name,
+        category_code,
+        parent_category_id,
+        category_level,
+        description,
+        display_order,
+        is_active
+      FROM product_categories
+      WHERE is_active = 1
+    
+    parallel_execution: false         # Sequential mode for small table
+    
+    fetch_size: 5000
+    batch_size: 5000
+    
+    output_format: "parquet"
+    output_partitions: 1              # Single file for lookup table
+    compression: "snappy"
+    write_mode: "overwrite"
+
+  # ============================================================
+  # EXAMPLE 6: Aggregated Sales Summary
+  # Sequential extraction for pre-aggregated data
+  # ============================================================
+  sales_summary:
+    query: |
+      SELECT 
+        TRUNC(order_date, 'MM') as month,
+        category_name,
+        region,
+        country,
+        COUNT(DISTINCT order_id) as total_orders,
+        SUM(order_amount) as total_revenue,
+        AVG(order_amount) as avg_order_value,
+        SUM(quantity) as total_units_sold,
+        COUNT(DISTINCT customer_id) as unique_customers
+      FROM orders o
+      JOIN order_items oi ON o.order_id = oi.order_id
+      JOIN products p ON oi.product_id = p.product_id
+      WHERE o.order_date >= TO_DATE('2023-01-01', 'YYYY-MM-DD')
+        AND o.status = 'COMPLETED'
+      GROUP BY TRUNC(order_date, 'MM'), category_name, region, country
+    
+    parallel_execution: false         # Aggregated results - sequential is fine
+    
+    fetch_size: 5000
+    batch_size: 5000
+    
+    output_format: "parquet"
+    output_partitions: 10
+    compression: "snappy"
+    write_mode: "overwrite"
+    
+    cache_dataframe: true             # Cache for potential multiple operations
+    
+  # ============================================================
+  # EXAMPLE 7: Customer Addresses (Medium table)
+  # Parallel execution
+  # ============================================================
+  customer_addresses:
+    query: |
+      SELECT 
+        address_id,
+        customer_id,
+        address_type,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        country,
+        postal_code,
+        is_primary,
+        is_active,
+        created_date
+      FROM customer_addresses
+      WHERE is_active = 1
+    
+    parallel_execution: true
+    partition_column: "address_id"
+    num_partitions: 80
+    
+    fetch_size: 8000
+    batch_size: 8000
+    
+    output_format: "parquet"
+    output_partitions: 100
+    compression: "snappy"
+    write_mode: "overwrite"
+
+\
