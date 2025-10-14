@@ -140,8 +140,8 @@ def main():
     """Main entry point"""
     
     # Get S3 config location from environment variables
-    s3_config_bucket = os.getenv('S3_CONFIG_BUCKET')
-    s3_config_prefix = os.getenv('S3_CONFIG_PREFIX', 'cfa_sf_strucs_parent')
+    s3_config_bucket = ""
+    s3_config_prefix = "jobConfigs"
     
     if not s3_config_bucket:
         logger.error("ERROR: S3_CONFIG_BUCKET environment variable not set")

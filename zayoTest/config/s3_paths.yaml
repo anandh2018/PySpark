@@ -1,0 +1,86 @@
+# s3_paths.yaml - S3 data paths configuration
+
+s3:
+  region: "us-east-1"
+  base_bucket: "m6-sf-stage"
+  
+  # Bronze Layer - Raw Oracle data from S3
+  bronze:
+    base_path: "s3a://m6-sf-stage/oracleM6/"
+    
+    tables:
+      m6_equipment:
+        path: "s3a://m6-sf-stage/oracleM6/equipment/"
+        format: "parquet"
+        view_name: "m6_equipment"
+        
+      m6_equipment_user_data:
+        path: "s3a://m6-sf-stage/oracleM6/equipment_user_data/"
+        format: "parquet"
+        view_name: "m6_equipment_user_data"
+
+      m6_network_location:
+        path: "s3a://m6-sf-stage/oracleM6/network_location/"
+        format: "parquet"
+        view_name: "m6_network_location"
+        
+      m6_eq_locn_struc_hier:
+        path: "s3a://m6-sf-stage/oracleM6/eq_locn_struc_hier/"
+        format: "parquet"
+        view_name: "m6_eq_locn_struc_hier"
+        
+      m6_eq_locn_struc_type:
+        path: "s3a://m6-sf-stage/oracleM6/eq_locn_struc_type/"
+        format: "parquet"
+        view_name: "m6_eq_locn_struc_type"
+        
+  
+  # Silver Layer - Staging/Transformed data
+  silver:
+    base_path: "s3a://m6-sf-stage/silver/cfa_sf_strucs_parent/"
+    
+    tables:
+      temp_cfa_loc_comp_01:
+        path: "s3a://m6-sf-stage/silver/cfa_sf_strucs_parent/temp_cfa_loc_comp_01/"
+        partition_cols: []
+        
+      temp_cfa_loc_comp_02:
+        path: "s3a://m6-sf-stage/silver/cfa_sf_strucs_parent/temp_cfa_loc_comp_02/"
+        partition_cols: []
+        
+      temp_cfa_loc_comp_03:
+        path: "s3a://m6-sf-stage/silver/cfa_sf_strucs_parent/temp_cfa_loc_comp_03/"
+        partition_cols: []
+        
+      temp_cfa_loc_comp_04:
+        path: "s3a://m6-sf-stage/silver/cfa_sf_strucs_parent/temp_cfa_loc_comp_04/"
+        partition_cols: []
+        
+      temp_cfa_loc_comp_multi_locs:
+        path: "s3a://m6-sf-stage/silver/cfa_sf_strucs_parent/temp_cfa_loc_comp_multi_locs/"
+        partition_cols: []
+        
+      temp_cfa_loc_comp_parent:
+        path: "s3a://m6-sf-stage/silver/cfa_sf_strucs_parent/temp_cfa_loc_comp_parent/"
+        partition_cols: []
+  
+  # Gold Layer - Final reports and aggregations
+  gold:
+    base_path: "s3a://m6-sf-stage/gold/cfa_sf_strucs_parent/"
+    
+    reports:
+      cfasf_multiloc_strucs1:
+        path: "s3a://m6-sf-stage/gold/cfa_sf_strucs_parent/cfasf_multiloc_strucs1/"
+        partition_cols: ["report_date"]
+        
+      cfasf_multiloc_strucs2:
+        path: "s3a://m6-sf-stage/gold/cfa_sf_strucs_parent/cfasf_multiloc_strucs2/"
+        partition_cols: ["report_date"]
+        
+      cfasf_multiloc_strucs3:
+        path: "s3a://m6-sf-stage/gold/cfa_sf_strucs_parent/cfasf_multiloc_strucs3/"
+        partition_cols: ["report_date"]
+        
+      m6tosf_location_component_sync:
+        path: "s3a://m6-sf-stage/gold/cfa_sf_strucs_parent/m6tosf_location_component_sync/"
+        partition_cols: ["date_loaded"]

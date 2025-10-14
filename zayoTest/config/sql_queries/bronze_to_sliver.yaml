@@ -1,0 +1,179 @@
+# bronze_to_silver.yaml - SQL queries for Bronze to Silver transformations
+
+queries:
+  # Step 1: Base Equipment Data Extraction
+  silver_temp_cfa_loc_comp_01:
+    description: "Extract base equipment-structure mapping from bronze layer"
+    depends_on: []
+    output_table: "temp_cfa_loc_comp_01"
+    sql: |
+      SELECT 
+          m6_equipment.EQUIPMENT_ID AS eqp_id,
+          m6_equipment_user_data.SFDC_LOCATION_ID AS eqp_sfdc_loc_id,
+          sf_location__c.Id AS location_id,
+          m6_network_location.CLLI_CODE AS eqp_clli,
+          m6_equipment.EQ_LOCN_STRUC_HIER_ID AS child_struc_id_pk,
+          m6_eq_locn_struc_hier.CHILD_IDENTIFIER AS child_struc_id,
+          m6_eq_locn_struc_hier.HIER_PATH AS child_struc_hier,
+          m6_eq_locn_struc_type.LOCN_STRUC_TYPE_DESC AS child_struc_type,
+          m6_eq_locn_struc_hier.PARENT_STRUC_HIER_ID AS parent_struc_id_pk,
+          parent_hier.CHILD_IDENTIFIER AS parent_struc_id,
+          parent_hier.HIER_PATH AS parent_struc_hier,
+          parent_type.LOCN_STRUC_TYPE_DESC AS parent_struc_type,
+          current_timestamp() AS processing_timestamp
+      FROM m6_eq_locn_struc_hier
+      INNER JOIN m6_eq_locn_struc_type 
+          ON m6_eq_locn_struc_hier.EQ_LOCN_STRUC_TYPE_ID = m6_eq_locn_struc_type.EQ_LOCN_STRUC_TYPE_ID
+      INNER JOIN m6_equipment 
+          ON m6_eq_locn_struc_hier.EQ_LOCN_STRUC_HIER_ID = m6_equipment.EQ_LOCN_STRUC_HIER_ID
+      LEFT JOIN m6_eq_locn_struc_hier AS parent_hier
+          ON m6_eq_locn_struc_hier.PARENT_STRUC_HIER_ID = parent_hier.EQ_LOCN_STRUC_HIER_ID
+      LEFT JOIN m6_equipment_user_data 
+          ON m6_equipment.EQUIPMENT_ID = m6_equipment_user_data.EQUIPMENT_ID
+      LEFT JOIN sf_location__c 
+          ON m6_equipment_user_data.SFDC_LOCATION_ID = sf_location__c.Location_ID__c
+      LEFT JOIN m6_eq_locn_struc_type AS parent_type
+          ON parent_hier.EQ_LOCN_STRUC_TYPE_ID = parent_type.EQ_LOCN_STRUC_TYPE_ID
+      LEFT JOIN m6_network_location 
+          ON m6_equipment.LOCATION_ID = m6_network_location.LOCATION_ID
+  
+  # Step 2: Child Structures
+  silver_temp_cfa_loc_comp_02_child:
+    description: "Extract child structures from temp_cfa_loc_comp_01"
+    depends_on: ["silver_temp_cfa_loc_comp_01"]
+    output_table: "temp_cfa_loc_comp_02_child"
+    sql: |
+      SELECT DISTINCT 
+          location_id,
+          child_struc_id_pk AS struc_pk,
+          child_struc_id AS struc_id,
+          child_struc_hier AS struc_hier,
+          child_struc_type AS struc_type
+      FROM temp_cfa_loc_comp_01
+      WHERE (
+          child_struc_type IN ('Cabinet', 'Cage', 'Ceiling')
+          AND eqp_clli <> 'ETHERNET VLAN'
+      )
+      OR (
+          child_struc_type = 'Room'
+          AND parent_struc_type = 'Suite'
+          AND eqp_clli <> 'ETHERNET VLAN'
+      )
+  
+  # Step 3: Parent Structures
+  silver_temp_cfa_loc_comp_02_parent:
+    description: "Extract parent structures from temp_cfa_loc_comp_01"
+    depends_on: ["silver_temp_cfa_loc_comp_01"]
+    output_table: "temp_cfa_loc_comp_02_parent"
+    sql: |
+      SELECT DISTINCT 
+          location_id,
+          parent_struc_id_pk AS struc_pk,
+          parent_struc_id AS struc_id,
+          parent_struc_hier AS struc_hier,
+          parent_struc_type AS struc_type
+      FROM temp_cfa_loc_comp_01
+      WHERE (
+          parent_struc_type IN ('Cabinet', 'Cage', 'Ceiling')
+          AND eqp_clli <> 'ETHERNET VLAN'
+      )
+      OR (
+          child_struc_type = 'Room'
+          AND parent_struc_type = 'Suite'
+          AND eqp_clli <> 'ETHERNET VLAN'
+      )
+  
+  # Step 4: Combined Structures
+  silver_temp_cfa_loc_comp_02:
+    description: "Combine child and parent structures"
+    depends_on: ["silver_temp_cfa_loc_comp_02_child", "silver_temp_cfa_loc_comp_02_parent"]
+    output_table: "temp_cfa_loc_comp_02"
+    sql: |
+      SELECT * FROM temp_cfa_loc_comp_02_child
+      UNION
+      SELECT * FROM temp_cfa_loc_comp_02_parent
+  
+  # Step 5: Deduplicate Structures
+  silver_temp_cfa_loc_comp_03:
+    description: "Deduplicate structure-location pairs"
+    depends_on: ["silver_temp_cfa_loc_comp_02"]
+    output_table: "temp_cfa_loc_comp_03"
+    sql: |
+      SELECT DISTINCT 
+          location_id,
+          struc_pk,
+          struc_id,
+          struc_hier,
+          struc_type
+      FROM temp_cfa_loc_comp_02
+  
+  # Step 6: Count Locations Per Structure
+  silver_temp_cfa_loc_comp_04:
+    description: "Count distinct locations per structure"
+    depends_on: ["silver_temp_cfa_loc_comp_03"]
+    output_table: "temp_cfa_loc_comp_04"
+    sql: |
+      SELECT 
+          struc_pk,
+          struc_id,
+          struc_hier,
+          struc_type,
+          COUNT(DISTINCT location_id) AS total_locations
+      FROM temp_cfa_loc_comp_03
+      GROUP BY 
+          struc_pk,
+          struc_id,
+          struc_hier,
+          struc_type
+  
+  # Step 7: Multi-Location Structure IDs
+  silver_temp_cfa_loc_comp_multi_locs:
+    description: "Extract structure IDs for multi-location structures"
+    depends_on: ["silver_temp_cfa_loc_comp_04"]
+    output_table: "temp_cfa_loc_comp_multi_locs"
+    sql: |
+      SELECT DISTINCT struc_pk
+      FROM temp_cfa_loc_comp_04
+      WHERE total_locations > 1
+  
+  # Step 8: Single-Location Parent Structures
+  silver_temp_cfa_loc_comp_parent:
+    description: "Isolate single-location parent structures"
+    depends_on: ["silver_temp_cfa_loc_comp_01", "silver_temp_cfa_loc_comp_multi_locs"]
+    output_table: "temp_cfa_loc_comp_parent"
+    sql: |
+      SELECT DISTINCT
+          t1.location_id,
+          t1.parent_struc_id_pk,
+          t1.parent_struc_id,
+          t1.parent_struc_hier,
+          t1.parent_struc_type
+      FROM temp_cfa_loc_comp_01 t1
+      LEFT JOIN temp_cfa_loc_comp_multi_locs ml
+          ON t1.parent_struc_id_pk = ml.struc_pk
+      WHERE (
+          t1.parent_struc_type IN ('Cabinet', 'Cage', 'Ceiling')
+          AND t1.eqp_clli <> 'ETHERNET VLAN'
+          AND ml.struc_pk IS NULL
+          AND t1.location_id IS NOT NULL
+      )
+      OR (
+          t1.child_struc_type = 'Room'
+          AND t1.parent_struc_type = 'Suite'
+          AND t1.eqp_clli <> 'ETHERNET VLAN'
+          AND ml.struc_pk IS NULL
+          AND t1.location_id IS NOT NULL
+      )
+
+# Execution metadata
+metadata:
+  layer: "silver"
+  execution_order:
+    - silver_temp_cfa_loc_comp_01
+    - silver_temp_cfa_loc_comp_02_child
+    - silver_temp_cfa_loc_comp_02_parent
+    - silver_temp_cfa_loc_comp_02
+    - silver_temp_cfa_loc_comp_03
+    - silver_temp_cfa_loc_comp_04
+    - silver_temp_cfa_loc_comp_multi_locs
+    - silver_temp_cfa_loc_comp_parent
