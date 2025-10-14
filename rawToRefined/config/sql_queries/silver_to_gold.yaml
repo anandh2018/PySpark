@@ -1,0 +1,183 @@
+# silver_to_gold.yaml - SQL queries for Silver to Gold transformations
+
+queries:
+  # Report 1: Multi-Location Structures Summary
+  gold_cfasf_multiloc_strucs1:
+    description: "Multi-location structure summary report"
+    depends_on: ["silver_temp_cfa_loc_comp_04"]
+    output_table: "cfasf_multiloc_strucs1"
+    sql: |
+      SELECT 
+          struc_pk,
+          struc_id,
+          struc_hier,
+          struc_type,
+          total_locations,
+          current_date() AS report_date,
+          current_timestamp() AS report_timestamp
+      FROM temp_cfa_loc_comp_04
+      WHERE total_locations > 1
+  
+  # Report 2: Multi-Location Equipment Details
+  gold_cfasf_multiloc_strucs2:
+    description: "Equipment details for multi-location structures"
+    depends_on: ["silver_temp_cfa_loc_comp_multi_locs"]
+    output_table: "cfasf_multiloc_strucs2"
+    sql: |
+      SELECT DISTINCT
+          m6_equipment.EQUIPMENT_ID,
+          m6_equipment.EQUIPMENT_NAME,
+          m6_equipment_user_data.SFDC_LOCATION_ID,
+          sf_location__c.Id,
+          sf_location__c.Address__c,
+          sf_location__c.City__c,
+          sf_location__c.State__c,
+          ml.struc_pk,
+          m6_eq_locn_struc_hier.CHILD_IDENTIFIER AS struc_child_identifier,
+          m6_eq_locn_struc_hier.HIER_PATH AS struc_hier_path,
+          m6_eq_locn_struc_type.LOCN_STRUC_TYPE_DESC AS struc_type_desc,
+          m6_eq_locn_struc_hier.PARENT_STRUC_HIER_ID,
+          parent_hier.CHILD_IDENTIFIER AS parent_child_identifier,
+          parent_hier.HIER_PATH AS parent_hier_path,
+          parent_type.LOCN_STRUC_TYPE_DESC AS parent_type_desc,
+          current_date() AS report_date,
+          current_timestamp() AS report_timestamp
+      FROM temp_cfa_loc_comp_multi_locs ml
+      INNER JOIN m6_equipment 
+          ON ml.struc_pk = m6_equipment.EQ_LOCN_STRUC_HIER_ID
+      LEFT JOIN m6_equipment_user_data 
+          ON m6_equipment.EQUIPMENT_ID = m6_equipment_user_data.EQUIPMENT_ID
+      LEFT JOIN sf_location__c 
+          ON m6_equipment_user_data.SFDC_LOCATION_ID = sf_location__c.Location_ID__c
+      INNER JOIN m6_eq_locn_struc_hier 
+          ON ml.struc_pk = m6_eq_locn_struc_hier.EQ_LOCN_STRUC_HIER_ID
+      INNER JOIN m6_eq_locn_struc_type 
+          ON m6_eq_locn_struc_hier.EQ_LOCN_STRUC_TYPE_ID = m6_eq_locn_struc_type.EQ_LOCN_STRUC_TYPE_ID
+      LEFT JOIN m6_eq_locn_struc_hier AS parent_hier
+          ON m6_eq_locn_struc_hier.PARENT_STRUC_HIER_ID = parent_hier.EQ_LOCN_STRUC_HIER_ID
+      LEFT JOIN m6_eq_locn_struc_type AS parent_type
+          ON parent_hier.EQ_LOCN_STRUC_TYPE_ID = parent_type.EQ_LOCN_STRUC_TYPE_ID
+  
+  # Report 3: Multi-Location Hierarchy with Parent-Child
+  gold_cfasf_multiloc_strucs3:
+    description: "Full hierarchy report with parent-child relationships"
+    depends_on: ["silver_temp_cfa_loc_comp_multi_locs"]
+    output_table: "cfasf_multiloc_strucs3"
+    sql: |
+      SELECT 
+          m6_eq_locn_struc_hier.EQ_LOCN_STRUC_HIER_ID AS struc_id,
+          m6_eq_locn_struc_type.LOCN_STRUC_TYPE_DESC AS struc_type,
+          m6_eq_locn_struc_hier.CHILD_IDENTIFIER AS struc,
+          m6_eq_locn_struc_hier.HIER_PATH AS struc_hier,
+          m6_equipment.EQUIPMENT_ID AS struc_eqp,
+          m6_equipment.EQUIPMENT_NAME AS struc_eqp_name,
+          m6_equipment_user_data.SFDC_LOCATION_ID AS struc_sfdc_loc,
+          sf_location__c.Id AS struc_loc_id,
+          sf_location__c.Floor_Suite__c AS struc_floor_suite,
+          sf_location__c.Room__c AS struc_room,
+          sf_location__c.Address__c AS struc_addr,
+          sf_location__c.City__c AS struc_city,
+          sf_location__c.State__c AS struc_st,
+          m6_eq_locn_struc_hier.PARENT_STRUC_HIER_ID AS parent_id,
+          parent_eqp.EQUIPMENT_ID AS parent_eqp,
+          parent_eqp.EQUIPMENT_NAME AS parent_eqp_name,
+          parent_eqp_user.SFDC_LOCATION_ID AS parent_sfdc_loc,
+          parent_loc.Id AS parent_loc_id,
+          parent_loc.Floor_Suite__c AS parent_floor_suite,
+          parent_loc.Room__c AS parent_room,
+          parent_loc.Address__c AS parent_addr,
+          parent_loc.City__c AS parent_city,
+          parent_loc.State__c AS parent_st,
+          current_date() AS report_date,
+          current_timestamp() AS report_timestamp
+      FROM temp_cfa_loc_comp_multi_locs ml
+      INNER JOIN m6_eq_locn_struc_hier 
+          ON ml.struc_pk = m6_eq_locn_struc_hier.EQ_LOCN_STRUC_HIER_ID
+      INNER JOIN m6_eq_locn_struc_type 
+          ON m6_eq_locn_struc_hier.EQ_LOCN_STRUC_TYPE_ID = m6_eq_locn_struc_type.EQ_LOCN_STRUC_TYPE_ID
+      LEFT JOIN m6_equipment 
+          ON m6_eq_locn_struc_hier.EQ_LOCN_STRUC_HIER_ID = m6_equipment.EQ_LOCN_STRUC_HIER_ID
+      LEFT JOIN m6_equipment_user_data 
+          ON m6_equipment.EQUIPMENT_ID = m6_equipment_user_data.EQUIPMENT_ID
+      LEFT JOIN sf_location__c 
+          ON m6_equipment_user_data.SFDC_LOCATION_ID = sf_location__c.Location_ID__c
+      LEFT JOIN m6_equipment AS parent_eqp
+          ON m6_eq_locn_struc_hier.PARENT_STRUC_HIER_ID = parent_eqp.EQ_LOCN_STRUC_HIER_ID
+      LEFT JOIN m6_equipment_user_data AS parent_eqp_user
+          ON parent_eqp.EQUIPMENT_ID = parent_eqp_user.EQUIPMENT_ID
+      LEFT JOIN sf_location__c AS parent_loc
+          ON parent_eqp_user.SFDC_LOCATION_ID = parent_loc.Location_ID__c
+      ORDER BY 
+          m6_eq_locn_struc_hier.PARENT_STRUC_HIER_ID,
+          m6_eq_locn_struc_hier.EQ_LOCN_STRUC_HIER_ID
+  
+  # Sync Table: INSERT Records
+  gold_m6tosf_sync_inserts:
+    description: "New structures to insert into Salesforce"
+    depends_on: ["silver_temp_cfa_loc_comp_parent"]
+    output_table: "m6tosf_sync_inserts"
+    sql: |
+      SELECT 
+          tcp.location_id AS sf_location_id,
+          tcp.parent_struc_id_pk AS m6_hier_id,
+          tcp.parent_struc_id AS struc_id,
+          tcp.parent_struc_hier AS struc_hier,
+          tcp.parent_struc_type AS struc_type,
+          CAST(NULL AS STRING) AS sf_parent_id,
+          'I' AS sync_action,
+          current_timestamp() AS date_loaded,
+          CAST(NULL AS TIMESTAMP) AS date_processed,
+          'PI' AS source,
+          CAST(NULL AS STRING) AS sf_struc_id
+      FROM temp_cfa_loc_comp_parent tcp
+      LEFT JOIN sf_location_component__c slc
+          ON tcp.parent_struc_id_pk = slc.METASOLV_STRUCTURE_HIERARCHY_ID__C
+      WHERE slc.ID IS NULL
+  
+  # Sync Table: UPDATE Records
+  gold_m6tosf_sync_updates:
+    description: "Existing structures with changes to update in Salesforce"
+    depends_on: ["silver_temp_cfa_loc_comp_parent"]
+    output_table: "m6tosf_sync_updates"
+    sql: |
+      SELECT 
+          tcp.location_id AS sf_location_id,
+          tcp.parent_struc_id_pk AS m6_hier_id,
+          tcp.parent_struc_id AS struc_id,
+          tcp.parent_struc_hier AS struc_hier,
+          tcp.parent_struc_type AS struc_type,
+          CAST(NULL AS STRING) AS sf_parent_id,
+          'U' AS sync_action,
+          current_timestamp() AS date_loaded,
+          CAST(NULL AS TIMESTAMP) AS date_processed,
+          'PU' AS source,
+          slc.ID AS sf_struc_id
+      FROM temp_cfa_loc_comp_parent tcp
+      INNER JOIN sf_location_component__c slc
+          ON tcp.parent_struc_id_pk = slc.METASOLV_STRUCTURE_HIERARCHY_ID__C
+      WHERE 
+          tcp.location_id <> slc.LOCATION__C
+          OR tcp.parent_struc_id <> slc.CAGE_NAME__C
+          OR tcp.parent_struc_hier <> slc.NAME__C
+          OR tcp.parent_struc_type <> slc.TYPE__C
+  
+  # Sync Table: Combined INSERT and UPDATE
+  gold_m6tosf_location_component_sync:
+    description: "Final sync table combining inserts and updates"
+    depends_on: ["gold_m6tosf_sync_inserts", "gold_m6tosf_sync_updates"]
+    output_table: "m6tosf_location_component_sync"
+    sql: |
+      SELECT * FROM m6tosf_sync_inserts
+      UNION ALL
+      SELECT * FROM m6tosf_sync_updates
+
+# Execution metadata
+metadata:
+  layer: "gold"
+  execution_order:
+    - gold_cfasf_multiloc_strucs1
+    - gold_cfasf_multiloc_strucs2
+    - gold_cfasf_multiloc_strucs3
+    - gold_m6tosf_sync_inserts
+    - gold_m6tosf_sync_updates
+    - gold_m6tosf_location_component_sync
