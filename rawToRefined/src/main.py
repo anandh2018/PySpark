@@ -1,8 +1,9 @@
 """
-main.py - Main application entry point
+main.py - Main application entry point with S3 config support
 """
 
 import os
+import sys
 import logging
 from datetime import datetime
 from pyspark.sql import SparkSession
@@ -19,20 +20,31 @@ logger = logging.getLogger(__name__)
 
 
 class CFASFStrucsParentReport:
-    """Main report application"""
+    """Main report application with S3 config support"""
     
-    def __init__(self, config_dir: str):
+    def __init__(self, s3_config_bucket: str, s3_config_prefix: str):
         """
         Initialize application
         
         Args:
-            config_dir: Directory containing configuration files
+            s3_config_bucket: S3 bucket containing config files
+            s3_config_prefix: S3 prefix for config files
         """
-        self.config_dir = config_dir
+        self.s3_config_bucket = s3_config_bucket
+        self.s3_config_prefix = s3_config_prefix
         self.start_time = datetime.now()
         
-        # Load configurations
-        self.config = ConfigManager(config_dir)
+        logger.info("\n" + "=" * 80)
+        logger.info("CFA SF STRUCS PARENT REPORT - INITIALIZATION")
+        logger.info("=" * 80)
+        logger.info(f"Start time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"Config location: s3://{s3_config_bucket}/{s3_config_prefix}")
+        
+        # Load configurations from S3
+        self.config = ConfigManager(s3_config_bucket, s3_config_prefix)
+        
+        # Print configuration summary
+        self._print_config_summary()
         
         # Initialize Spark
         self.spark = self._init_spark()
@@ -41,12 +53,24 @@ class CFASFStrucsParentReport:
         self.data_loader = DataLoader(self.spark, self.config)
         self.sql_executor = SQLExecutor(self.spark, self.config)
     
+    def _print_config_summary(self):
+        """Print summary of loaded configurations"""
+        summary = self.config.get_config_summary()
+        
+        logger.info("\nConfiguration Summary:")
+        logger.info(f"  Bronze tables: {summary['bronze_tables_count']}")
+        logger.info(f"  Silver tables: {summary['silver_tables_count']}")
+        logger.info(f"  Gold reports: {summary['gold_reports_count']}")
+        logger.info(f"  Bronze→Silver queries: {summary['bronze_to_silver_queries']}")
+        logger.info(f"  Silver→Gold queries: {summary['silver_to_gold_queries']}")
+    
     def _init_spark(self) -> SparkSession:
         """Initialize Spark session"""
         spark_config = self.config.get_spark_config()
-        app_name = self.config.app_config['application']['name']
+        app_config = self.config.get_application_config()
+        app_name = app_config.get('name', 'CFA_SF_STRUCS_PARENT_REPORT')
         
-        logger.info(f"Initializing Spark session: {app_name}")
+        logger.info(f"\nInitializing Spark session: {app_name}")
         
         builder = SparkSession.builder.appName(app_name)
         
@@ -56,63 +80,86 @@ class CFASFStrucsParentReport:
         
         spark = builder.getOrCreate()
         
-        logger.info(f"Spark version: {spark.version}")
-        logger.info(f"Spark UI: {spark.sparkContext.uiWebUrl}")
+        logger.info(f"  ✓ Spark version: {spark.version}")
+        logger.info(f"  ✓ Spark UI: {spark.sparkContext.uiWebUrl}")
         
         return spark
     
     def run(self):
         """Execute the complete report workflow"""
         logger.info("\n" + "=" * 80)
-        logger.info("CFA SF STRUCS PARENT REPORT - START")
+        logger.info("CFA SF STRUCS PARENT REPORT - EXECUTION START")
         logger.info("=" * 80)
-        logger.info(f"Start time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         
         try:
             # Step 1: Load Bronze Tables from S3
-            self.data_loader.load_bronze_tables()
+            bronze_tables = self.data_loader.load_bronze_tables()
+            logger.info(f"\n✓ Step 1 Complete: Loaded {len(bronze_tables)} bronze tables")
             
             # Step 2: Execute Bronze to Silver Transformations
             self.sql_executor.execute_bronze_to_silver()
+            logger.info(f"\n✓ Step 2 Complete: Bronze to Silver transformations")
             
             # Step 3: Execute Silver to Gold Transformations
             self.sql_executor.execute_silver_to_gold()
+            logger.info(f"\n✓ Step 3 Complete: Silver to Gold transformations")
             
             # Calculate runtime
             end_time = datetime.now()
             runtime = (end_time - self.start_time).total_seconds() / 60
             
             logger.info("\n" + "=" * 80)
-            logger.info("CFA SF STRUCS PARENT REPORT - COMPLETED SUCCESSFULLY")
+            logger.info("CFA SF STRUCS PARENT REPORT - COMPLETED SUCCESSFULLY ✓")
             logger.info("=" * 80)
             logger.info(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
             logger.info(f"Total runtime: {runtime:.2f} minutes")
+            logger.info("=" * 80)
             
             return True
             
         except Exception as e:
+            end_time = datetime.now()
+            runtime = (end_time - self.start_time).total_seconds() / 60
+            
             logger.error("\n" + "=" * 80)
-            logger.error("CFA SF STRUCS PARENT REPORT - FAILED")
+            logger.error("CFA SF STRUCS PARENT REPORT - FAILED ✗")
             logger.error("=" * 80)
             logger.error(f"Error: {str(e)}", exc_info=True)
+            logger.error(f"Failed after: {runtime:.2f} minutes")
+            logger.error("=" * 80)
             raise
         
         finally:
             # Stop Spark
+            logger.info("\nStopping Spark session...")
             self.spark.stop()
             logger.info("Spark session stopped")
 
 
 def main():
     """Main entry point"""
-    # Get configuration directory
-    config_dir = os.getenv('CONFIG_DIR', './config')
     
-    # Run report
-    report = CFASFStrucsParentReport(config_dir)
-    success = report.run()
+    # Get S3 config location from environment variables
+    s3_config_bucket = os.getenv('S3_CONFIG_BUCKET')
+    s3_config_prefix = os.getenv('S3_CONFIG_PREFIX', 'cfa_sf_strucs_parent')
     
-    return success
+    if not s3_config_bucket:
+        logger.error("ERROR: S3_CONFIG_BUCKET environment variable not set")
+        logger.error("Please set: export S3_CONFIG_BUCKET=your-config-bucket")
+        sys.exit(1)
+    
+    logger.info(f"Configuration source: s3://{s3_config_bucket}/{s3_config_prefix}")
+    
+    try:
+        # Run report
+        report = CFASFStrucsParentReport(s3_config_bucket, s3_config_prefix)
+        success = report.run()
+        
+        sys.exit(0 if success else 1)
+        
+    except Exception as e:
+        logger.error(f"Fatal error: {str(e)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
