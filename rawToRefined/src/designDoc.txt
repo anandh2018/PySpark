@@ -119,3 +119,55 @@ gold/
     ├── date_loaded=2024-01-01/          # Partitioned by load date
     └── Purpose: INSERT/UPDATE records for Salesforce sync
     
+
+Layer Segregation Logic in Your Project
+How I Determined Bronze vs Silver vs Gold
+🥉 BRONZE: Tables that are READ ONLY from source
+yaml# Criteria for Bronze:
+1. Direct from Oracle
+2. No transformations applied
+3. Used as input for joins
+4. Structure unchanged
+
+# Your Bronze Tables:
+- m6_equipment
+- m6_equipment_user_data
+- sf_location__c
+- m6_network_location
+- m6_eq_locn_struc_hier
+- m6_eq_locn_struc_type
+- sf_location_component__c
+🥈 SILVER: Tables created by TRANSFORMING Bronze
+yaml# Criteria for Silver:
+1. Result of JOIN operations
+2. Contains WHERE filters
+3. Has deduplication (DISTINCT)
+4. Intermediate calculations
+5. Still row-level data (not aggregated)
+6. Named with "temp_" prefix
+
+# Your Silver Tables:
+- temp_cfa_loc_comp_01  ← Joins 7 bronze tables
+- temp_cfa_loc_comp_02  ← Filters + UNION
+- temp_cfa_loc_comp_03  ← DISTINCT (deduplication)
+- temp_cfa_loc_comp_04  ← GROUP BY (but intermediate)
+- temp_cfa_loc_comp_multi_locs ← Filter on counts
+- temp_cfa_loc_comp_parent ← Left join + filters
+🥇 GOLD: Tables for BUSINESS CONSUMPTION
+yaml# Criteria for Gold:
+1. Final business reports
+2. Has report metadata (report_date)
+3. Partitioned for analytics
+4. Aggregated/summarized
+5. Direct business value
+6. Named as actual report names
+
+# Your Gold Reports:
+- cfasf_multiloc_strucs1  ← Multi-location summary
+- cfasf_multiloc_strucs2  ← Equipment details report
+- cfasf_multiloc_strucs3  ← Hierarchy report
+- m6tosf_location_component_sync ← Sync output
+```
+
+---
+
