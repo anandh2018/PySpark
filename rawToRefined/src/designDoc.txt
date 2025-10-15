@@ -1,0 +1,121 @@
+Bronze, Silver, and Gold Layer Segregation - Detailed Explanation
+Layer Architecture Overview
+  
+┌─────────────────────────────────────────────────────────────────┐
+│                        DATA FLOW                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  BRONZE (Raw)          SILVER (Staging)         GOLD (Analytics) │
+│  ═════════════         ═══════════════          ════════════════ │
+│                                                                  │
+│  Oracle Tables    →    Transformations    →     Final Reports   │
+│  (S3 Parquet)          (Cleaned/Joined)         (Aggregated)    │
+│                                                                  │
+│  - No changes          - Filtering              - Business KPIs  │
+│  - 1:1 copy            - Joining tables         - Denormalized  │
+│  - Raw structure       - Deduplication          - Partitioned   │
+│                        - Type casting           - Optimized     │
+│                        - Quality checks                          │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Detailed Layer Breakdown for Your Project
+
+### 🥉 BRONZE LAYER - Raw Oracle Data
+
+**Purpose**: Store raw data exactly as it comes from Oracle, no transformations
+
+**Location**: `s3://your-bucket/bronze/oracle/`
+
+**Characteristics**:
+- ✅ Direct copy from Oracle
+- ✅ No data quality checks
+- ✅ No transformations
+- ✅ Historical archive
+- ✅ Schema preserved from source
+
+**Tables in Bronze**:
+```
+bronze/
+├── m6_equipment/                    # Raw equipment records
+├── m6_equipment_user_data/          # User data associations
+├── sf_location__c/                  # Salesforce locations
+├── m6_network_location/             # Network location data
+├── m6_eq_locn_struc_hier/          # Equipment location hierarchy
+├── m6_eq_locn_struc_type/          # Structure type lookup
+└── sf_location_component__c/        # Salesforce location components
+
+
+
+### 🥈 SILVER LAYER - Staging/Transformed Data
+
+**Purpose**: Clean, join, filter, and prepare data for analytics. This is your "working layer"
+
+**Location**: `s3://your-bucket/silver/cfa_sf_strucs_parent/`
+
+**Characteristics**:
+- ✅ Cleaned data (nulls handled, types cast)
+- ✅ Business logic applied
+- ✅ Joined tables
+- ✅ Filtered irrelevant records
+- ✅ Deduplicated
+- ✅ Enriched with calculations
+- ❌ NOT aggregated yet
+- ❌ NOT business-ready reports
+
+**Tables in Silver** (All your temp tables):
+```
+silver/
+├── temp_cfa_loc_comp_01/           # Base equipment-structure mapping
+│   └── Purpose: Join 7 bronze tables, apply filters
+│
+├── temp_cfa_loc_comp_02/           # Combined child + parent structures
+│   └── Purpose: Union child and parent structures with filters
+│
+├── temp_cfa_loc_comp_03/           # Deduplicated structures
+│   └── Purpose: Remove duplicates
+│
+├── temp_cfa_loc_comp_04/           # Structure location counts
+│   └── Purpose: Count locations per structure
+│
+├── temp_cfa_loc_comp_multi_locs/  # Multi-location structure IDs
+│   └── Purpose: Identify structures in >1 location
+│
+└── temp_cfa_loc_comp_parent/       # Single-location parents
+    └── Purpose: Final staging for sync operations
+
+### 🥇 GOLD LAYER - Business-Ready Reports
+
+**Purpose**: Final, aggregated, business-ready datasets for consumption
+
+**Location**: `s3://your-bucket/gold/cfa_sf_strucs_parent/`
+
+**Characteristics**:
+- ✅ Aggregated data
+- ✅ Business metrics/KPIs
+- ✅ Denormalized for performance
+- ✅ Partitioned by date/business key
+- ✅ Optimized for BI tools
+- ✅ Ready for end-user consumption
+- ✅ Contains report metadata (report_date, report_timestamp)
+
+**Reports in Gold**:
+```
+gold/
+├── cfasf_multiloc_strucs1/              # Report 1: Multi-location summary
+│   ├── report_date=2024-01-01/          # Partitioned by date
+│   └── Purpose: Summary of structures in multiple locations
+│
+├── cfasf_multiloc_strucs2/              # Report 2: Equipment details
+│   ├── report_date=2024-01-01/
+│   └── Purpose: Detailed equipment info for multi-location structures
+│
+├── cfasf_multiloc_strucs3/              # Report 3: Hierarchy report
+│   ├── report_date=2024-01-01/
+│   └── Purpose: Parent-child relationships with full details
+│
+└── m6tosf_location_component_sync/      # Report 4: Sync table
+    ├── date_loaded=2024-01-01/          # Partitioned by load date
+    └── Purpose: INSERT/UPDATE records for Salesforce sync
+    
