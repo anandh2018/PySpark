@@ -158,7 +158,7 @@ class SQLExecutor:
     
     def execute_bronze_to_silver(self):
         """Execute all bronze to silver transformations"""
-        logger.info("\n" + "=" * 60)
+        logger.info("=" * 60)
         logger.info("STEP 2: BRONZE TO SILVER TRANSFORMATIONS")
         logger.info("=" * 60)
         

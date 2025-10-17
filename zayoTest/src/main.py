@@ -96,6 +96,24 @@ class CFASFStrucsParentReport:
             bronze_tables = self.data_loader.load_bronze_tables()
             logger.info(f"\n✓ Step 1 Complete: Loaded {len(bronze_tables)} bronze tables")
             
+            # Step 2: Execute Bronze to Silver Transformations
+            self.sql_executor.execute_bronze_to_silver()
+            logger.info(f"\n✓ Step 2 Complete: Bronze to Silver transformations")
+                        # Step 3: Execute Silver to Gold Transformations
+            self.sql_executor.execute_silver_to_gold()
+            logger.info(f"\n✓ Step 3 Complete: Silver to Gold transformations")
+            
+            # Calculate runtime
+            end_time = datetime.now()
+            runtime = (end_time - self.start_time).total_seconds() / 60
+            
+            logger.info("\n" + "=" * 80)
+            logger.info("CFA SF STRUCS PARENT REPORT - COMPLETED SUCCESSFULLY ✓")
+            logger.info("=" * 80)
+            logger.info(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"Total runtime: {runtime:.2f} minutes")
+            logger.info("=" * 80)
+            
             return True
             
         except Exception as e:
